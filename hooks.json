@@ -1,5 +1,5 @@
 {
-  "description": "按会话所选模型注入对应的 AGENTS 规则（GPT-6-Sol / GPT-6.1-Sol / GPT-6-Astra），规则文件在 ~/.codex/model-agents/",
+  "description": "按会话所选模型注入对应的 AGENTS 规则（GPT-6-Sol / GPT-6.1-Sol / GPT-6-Astra），并在命令执行前拦下修改网络、代理和系统配置的操作。脚本都在 ~/.codex/model-agents/",
   "hooks": {
     "SessionStart": [
       {
@@ -12,6 +12,19 @@
             "timeout": 15,
             "statusMessage": "加载模型专属规则",
             "additionalContextLimit": 4000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I -S ~/.codex/model-agents/guard.py",
+            "commandWindows": "改成你的python.exe完整路径 -I -S C:\\Users\\你的用户名\\.codex\\model-agents\\guard.py",
+            "timeout": 10
           }
         ]
       }
