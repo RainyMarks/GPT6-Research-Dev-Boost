@@ -1,4 +1,5 @@
-"""PreToolUse guard for Codex: deny commands that change network, proxy or system settings.
+"""PreToolUse guard for Codex: deny commands that change network, proxy or system settings,
+or that would destroy running experiments.
 
 AGENTS.md already forbids these changes, but with approval_policy = "never" a rule the
 model overlooks is executed straight away. This hook looks at every shell command and
@@ -10,6 +11,9 @@ import sys
 
 # Proxy clients whose processes and config folders are off limits. Add your own here.
 PROXY_CLIENTS = ("mihomo", "clash", "verge", "v2ray", "xray", "sing-box", "nekoray", "nekobox", "hiddify")
+# Directory names that usually hold datasets, checkpoints or results; recursive deletes are denied.
+ARTIFACT_DIRS = {"data", "dataset", "datasets", "checkpoint", "checkpoints", "ckpt", "ckpts", "weights",
+                 "runs", "wandb", "mlruns", "results", "experiments"}
 
 # Cheap first pass on the raw hook input. Starting Python already costs a few hundred ms on
 # some Windows machines, so calls that contain none of these words skip loading json and re.
@@ -19,7 +23,8 @@ TRIGGERS = tuple(w.encode() for w in PROXY_CLIENTS) + (
     b"net.exe", b"scheduledtask", b"schtasks", b"executionpolicy", b"mppreference", b"certutil",
     b"certificate", b"bcdedit", b"computer", b"shutdown", b"optionalfeature", b"dism", b"auth.json",
     b".npmrc", b".yarnrc", b".condarc", b".curlrc", b".wgetrc", b"pip.ini", b"pip.conf",
-    b" -e ", b" -ec ", b" -en ", b" -enc ", b"encodedcommand")
+    b" -e ", b" -ec ", b" -en ", b" -enc ", b"encodedcommand",
+    b"stop-process", b"spps", b"taskkill", b"pkill", b"killall", b"wmic", b"nvidia-smi", b"clean")
 DELETE_WORDS = (b"remove-item", b"rm ", b"del ", b"erase ", b"rd ", b"rmdir", b"ri ")
 RECURSIVE_WORDS = (b"-r", b"-fr", b"/s")
 
@@ -27,6 +32,8 @@ NETWORK = "修改网络或代理配置"
 SYSTEM = "修改系统配置"
 SECRET = "读取 Codex 凭据"
 DELETE = "删除可能指向根目录或用户目录的路径"
+TRAINING = "按名字批量结束 Python 等进程"
+DATA = "删除数据集、checkpoint 或实验结果"
 
 
 def suspicious(raw):
@@ -42,8 +49,19 @@ def compile_rules(re):
     write = (r"(Set-Content|Add-Content|Out-File|Clear-Content|Copy-Item|Move-Item|Remove-Item|New-Item|"
              r"\bsc\b|\bac\b|\bni\b|\bri\b|\bdel\b|\brm\b|\bcp\b|\bmv\b|\btee\b|(?<![\d*])>)")
     hkey = r"(\bHK(LM|CU|CR|U|CC)\b|Registry::)"
+    interp = r"(python\w*|pythonw|py|torchrun|accelerate|deepspeed|jupyter[\w-]*|ipykernel\w*)(\.exe)?\b"
     # (category, pattern, extra pattern that must also appear in the command or None)
     shell = [
+        (TRAINING, rf"\b(Stop-Process|spps)\b{seg}-(Name|ProcessName)\s+['\"]?{interp}", None),
+        (TRAINING, rf"\b(Stop-Process|spps|kill)\b{seg}\b(Get-Process|gps|ps)\s+(-Name\s+)?['\"]?{interp}", None),
+        (TRAINING, rf"\b(Get-Process|gps|ps)\b{seg}\b{interp}[^;\n]*\|\s*(Stop-Process|spps|kill)\b", None),
+        (TRAINING, rf"\btaskkill(\.exe)?\b{seg}/im\s+['\"]?{interp}", None),
+        (TRAINING, rf"\b(pkill|killall)\b{seg}\b{interp}", None),
+        (TRAINING, rf"\bwmic\b{seg}\b{interp}{seg}\b(delete|terminate)\b", None),
+        (SYSTEM, rf"\bnvidia-smi(\.exe)?\b{seg}\s(-pl|--power-limit|-pm|--persistence-mode|-lgc|--lock-gpu-clocks|"
+                 r"-rgc|--reset-gpu-clocks|-lmc|-rmc|-ac|--applications-clocks|-rac|-c|--compute-mode|-r|"
+                 r"--gpu-reset|-e|--ecc-config|-mig|--multi-instance-gpu)(\s|=|$|['\"])", None),
+        (DATA, rf"\bgit\s+clean\b{seg}\s-\w*x", None),
         (NETWORK, rf"\bnetsh(\.exe)?\b{seg}\b(set|add|delete|reset|import|install|uninstall)\b", None),
         (NETWORK, r"\b(New|Set|Remove|Enable|Disable|Rename|Restart|Reset)-Net[A-Za-z]+\b", None),
         (NETWORK, r"\b(Set|Reset|Add|Remove)-DnsClient[A-Za-z]*\b", None),
@@ -104,7 +122,8 @@ def decode_encoded_commands(re, command):
 
 
 def check_delete(re, command):
-    """Recursive deletes of a root or home path, or of a path built from a variable not set here.
+    """Recursive deletes of a root or home path, of a dataset/checkpoint/results folder, or of a
+    path built from a variable not set here.
 
     Every Codex command runs in a fresh shell, so a variable not assigned in the same
     command expands to an empty string and "$dir\\*" becomes "\\*", the drive root.
@@ -120,7 +139,9 @@ def check_delete(re, command):
             if not target or target.startswith("-"):
                 continue
             if root.match(target):
-                return target
+                return DELETE, target
+            if re.split(r"[\\/]+", target.rstrip("\\/*"))[-1].lower() in ARTIFACT_DIRS:
+                return DATA, target
             if token.startswith("'"):  # PowerShell does not expand variables in single quotes
                 continue
             for v in re.finditer(r"\$\{?(?P<name>[A-Za-z_][\w:]*)\}?", target):
@@ -130,7 +151,7 @@ def check_delete(re, command):
                     continue
                 n = re.escape(name)
                 if not re.search(rf"\${n}\s*=(?!=)|foreach\s*\(\s*\${n}\s+in\b|(^|[\s;('\"]){n}=", command, re.I):
-                    return target
+                    return DELETE, target
     return None
 
 
@@ -139,6 +160,12 @@ def deny(category, detail):
     if category == DELETE:
         reason = (f"已拦截：递归删除的目标（{detail[:80]}）可能展开成根目录或用户目录。每条命令都在新的 shell 里运行，"
                   "没在同一条命令里赋值的变量是空的。请写出完整路径，或在同一条命令里赋值、确认非空且位于目标目录内之后再删。")
+    elif category == TRAINING:
+        reason = (f"已拦截：按名字结束进程（{detail[:80]}）会连带结束用户正在运行的训练和其他任务。"
+                  "只按 PID 结束你自己启动的进程；需要释放 GPU 或内存时，报告占用情况，由用户决定。")
+    elif category == DATA:
+        reason = (f"已拦截：这条命令会删除 {detail[:80]}，里面可能是数据集、checkpoint 或实验结果。"
+                  "需要清理空间时，列出候选目录和大小，由用户决定。")
     else:
         reason = (f"已拦截：这条操作会{category}（{detail[:80]}）。按全局规则，这类操作不由 Codex 执行："
                   "不要换写法重试或绕过；如果任务确实需要，在回复里写明要执行的命令、影响和恢复方法，由用户决定。")
@@ -169,8 +196,7 @@ def check(raw):
         m = pattern.search(text)
         if m and (extra is None or extra.search(text)):
             return category, m.group(0).strip()
-    target = check_delete(re, text)
-    return (DELETE, target) if target is not None else None
+    return check_delete(re, text)
 
 
 def main():
