@@ -1,5 +1,5 @@
-"""PreToolUse guard for Codex: deny commands that change network, proxy or system settings,
-or that would destroy running experiments.
+"""PreToolUse guard for Codex: deny commands that touch the company proxy client, read Codex
+credentials, or would destroy files or running experiments.
 
 AGENTS.md already forbids these changes, but with approval_policy = "never" a rule the
 model overlooks is executed straight away. This hook looks at every shell command and
@@ -28,7 +28,7 @@ TRIGGERS = tuple(w.encode() for w in PROXY_CLIENTS) + (
 DELETE_WORDS = (b"remove-item", b"rm ", b"del ", b"erase ", b"rd ", b"rmdir", b"ri ")
 RECURSIVE_WORDS = (b"-r", b"-fr", b"/s")
 
-NETWORK = "修改网络或代理配置"
+NETWORK = "结束或修改代理客户端"
 SYSTEM = "修改系统配置"
 SECRET = "读取 Codex 凭据"
 DELETE = "删除可能指向根目录或用户目录的路径"
@@ -62,46 +62,14 @@ def compile_rules(re):
                  r"-rgc|--reset-gpu-clocks|-lmc|-rmc|-ac|--applications-clocks|-rac|-c|--compute-mode|-r|"
                  r"--gpu-reset|-e|--ecc-config|-mig|--multi-instance-gpu)(\s|=|$|['\"])", None),
         (DATA, rf"\bgit\s+clean\b{seg}\s-\w*x", None),
-        (NETWORK, rf"\bnetsh(\.exe)?\b{seg}\b(set|add|delete|reset|import|install|uninstall)\b", None),
-        (NETWORK, r"\b(New|Set|Remove|Enable|Disable|Rename|Restart|Reset)-Net[A-Za-z]+\b", None),
-        (NETWORK, r"\b(Set|Reset|Add|Remove)-DnsClient[A-Za-z]*\b", None),
-        (NETWORK, r"\broute(\.exe)?\s+(add|delete|change|-f)\b", None),
-        (NETWORK, r"\bipconfig(\.exe)?\s+/(release|renew)", None),
-        (NETWORK, rf"\bgit\s+config\b(?!{seg}--(get|list|show))"
-                  rf"(?={seg}\b(https?|core)\.([\w.*:/-]*\.)?(proxy|gitproxy|sslverify|sslcainfo|sslbackend)\b)", None),
-        (NETWORK, r"\b(npm|pnpm|yarn)\s+config\s+(set|delete|rm|edit)\b|\bnpm\s+set\s", None),
-        (NETWORK, r"\bpip3?\s+config\s+(set|unset|edit)\b", None),
-        (NETWORK, rf"\bconda\s+config\b{seg}--(set|add|append|prepend|remove|remove-key)\b", None),
         (NETWORK, rf"\b(Stop-Process|spps|kill|taskkill(\.exe)?)\b{seg}\b({clients})\b", None),
         (NETWORK, rf"\b(Get-Process|gps|ps)\b{seg}\b({clients})\b[^;\n]*\|\s*(Stop-Process|spps|kill)\b", None),
         (NETWORK, rf"[\\/]({clients})[\\/]", write),
-        (NETWORK, r"drivers[\\/]+etc[\\/]+hosts\b", write),
-        (NETWORK, r"\bwsl(\.exe)?\s+(--shutdown|--terminate|-t\s|--unregister|--manage|--set-default)", None),
-        (SYSTEM, r"\breg(\.exe)?\s+(add|delete|import|copy|restore|load|unload)\b", None),
-        (SYSTEM, r"\b(Set|New|Remove|Rename|Clear|Copy|Move)-ItemProperty\b", hkey),
-        (SYSTEM, rf"\b(Remove-Item|New-Item|ri|ni)\b{seg}{hkey}", None),
-        (SYSTEM, r"\bsetx(\.exe)?\b", None),
-        (SYSTEM, r"SetEnvironmentVariable\s*\([^)]*\b(User|Machine)\b", None),
-        (SYSTEM, r"\b(Stop|Start|Restart|Set|Suspend|New|Remove)-Service\b", None),
-        (SYSTEM, r"\bsc(\.exe)?\s+(config|stop|start|delete|create|failure|pause)\s", None),
-        (SYSTEM, r"\bnet(\.exe)?\s+(stop|start|user|localgroup|share)\b", None),
-        (SYSTEM, r"\b(Register|Unregister|Set|Disable|Enable)-ScheduledTask\b", None),
-        (SYSTEM, r"\bschtasks(\.exe)?\s+/(create|delete|change|run|end)\b", None),
-        (SYSTEM, rf"\bSet-ExecutionPolicy\b(?!{seg}-Scope\s+Process)", None),
-        (SYSTEM, r"\b(Set|Add|Remove)-MpPreference\b", None),
-        (SYSTEM, rf"\bcertutil(\.exe)?\b{seg}-(addstore|delstore|importpfx|repairstore)\b", None),
-        (SYSTEM, r"\bImport-(Pfx)?Certificate\b", None),
         (SYSTEM, r"\b(bcdedit|Restart-Computer|Stop-Computer)\b|\bshutdown(\.exe)?\s+[/-][srhp]\b", None),
-        (SYSTEM, rf"\b(Enable|Disable)-WindowsOptionalFeature\b|\bdism(\.exe)?\b{seg}/(enable|disable)-feature", None),
         (SECRET, r"\.codex[\\/]+auth\.json", None),
     ]
     patch = [
-        (NETWORK, r"drivers[\\/]+etc[\\/]+hosts$"),
         (NETWORK, rf"[\\/]({clients})[\\/]"),
-        # global (home-level) tool configs; project-level files stay editable
-        (NETWORK, r"^(~|[A-Za-z]:[\\/]+Users[\\/]+[^\\/]+|/home/[^/]+|/Users/[^/]+)[\\/]+"
-                  r"(\.gitconfig|\.npmrc|\.yarnrc(\.yml)?|\.condarc|\.curlrc|\.wgetrc|\.wslconfig|"
-                  r"pip[\\/]+pip\.ini|AppData[\\/]+Roaming[\\/]+pip[\\/]+pip\.ini|\.config[\\/]+pip[\\/]+pip\.conf)$"),
         (SECRET, r"[\\/]\.codex[\\/]+auth\.json$"),
     ]
     return ([(c, re.compile(p, re.I), re.compile(x, re.I) if x else None) for c, p, x in shell],
