@@ -4,11 +4,11 @@
 
 ### 把 Codex 里的 GPT-6，从“你说什么它做什么”，变成会自己找问题、敢下结论、肯补实验的研究搭档
 
-为 **GPT-6-Sol · GPT-6.1-Sol · GPT-6-Astra** 分别定制行为规则 · 四个按需加载的科研 skill · 执行前拦截致命操作的 guard
+为 **GPT-6-Sol · GPT-6.1-Sol · GPT-6-Astra** 分别定制行为规则 · 四个按需加载的科研 skill
 
 ![Codex](https://img.shields.io/badge/OpenAI%20Codex-0.160%2B-000000?logo=openai)
 ![Models](https://img.shields.io/badge/models-GPT--6%20Sol%20%7C%206.1%20Sol%20%7C%20Astra-412991)
-![Hooks](https://img.shields.io/badge/hooks-SessionStart%20%2B%20PreToolUse-2ea44f)
+![Hook](https://img.shields.io/badge/hook-SessionStart-2ea44f)
 ![Skills](https://img.shields.io/badge/skills-experiments%20%7C%20paper%20%7C%20literature%20%7C%20ideation-d97706)
 ![A/B](https://img.shields.io/badge/A%2FB%20tested-8%20tasks-0a7bbb)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -32,7 +32,6 @@
 | **帮我想研究方向** | 三个方向，检索 4 次 | 先排除领域里最常见的三种做法，从**六个机制角度**发散，每个方向写清证伪条件，检索 7 次 |
 | **改一个日期解析函数** | 只改点名的函数，绕开它的导入器照旧崩溃 | 顺着数据流修通整条导入链路，还会主动指出读到的无关 bug |
 | **复制一个文件存档** | 2 条命令 + SHA256 比对，56k token | **1 条命令**，38k token |
-| **模型要执行危险命令** | `approval_policy = "never"` 下直接执行 | guard 在执行前拦下，并把原因告诉模型 |
 
 <sub>数据来自埋了陷阱的测试仓库，每组跑一次，代表方向而非严格统计。完整表格见[实测](#实测)。</sub>
 
@@ -60,9 +59,8 @@ GPT-6 家族能力很强，但在真实的科研和开发里，社区反复吐�
 - **过度验证**：一个小改动配上冒烟测试、SHA256 比对，额度被仪式性检查吃掉。
 - **防御性代码**：坏数据被 `try/except` 静默吞掉，程序“跑通了”，结果却悄悄少了几行。
 - **长任务迷路**：上下文压缩后丢掉目标、重做已完成的步骤。
-- **规则写了也会被忽略**：`approval_policy = "never"` 下，模型一条命令就能删掉目录、杀掉你正在跑的训练。
 
-Codex 只读取一个全局 `AGENTS.md`，没法区分模型，模型也看不到自己的型号。“为不同模型写不同规则”在官方配置里没有现成入口，“必须遵守的红线”也只能交给 hook。
+Codex 只读取一个全局 `AGENTS.md`，没法区分模型，模型也看不到自己的型号。“为不同模型写不同规则”在官方配置里没有现成入口。
 
 ## 怎么做到的
 
@@ -74,10 +72,6 @@ flowchart LR
     B -->|gpt-6-sol| E[6-Sol 规则]
     C & D & E --> G[叠加全局 AGENTS.md]
     G --> S[任务匹配时加载科研 skill]
-    S --> H[模型发起命令或补丁]
-    H --> I{PreToolUse guard}
-    I -->|普通操作| J[执行]
-    I -->|致命操作| K[拦下并说明原因]
 ```
 
 | 层 | 文件 | 作用 |
@@ -85,9 +79,8 @@ flowchart LR
 | **全局规则** | `AGENTS.md` | 所有模型共用：操作边界、工作方式、代码质量、与风险相称的验证、科研原则 |
 | **模型规则** | `model-agents/AGENTS.*.md` | 只针对各模型已知短板，由 SessionStart hook 按会话所选模型注入 |
 | **科研 skill** | `skills/` | 实验、论文、文献、构思四个 skill，平时只占一行描述，任务对得上时才加载全文 |
-| **拦截层** | `model-agents/guard.py` | PreToolUse hook，把最致命的几条红线从“写在提示里”变成“执行前检查” |
 
-只用 Codex 官方的 hook 和 skill 机制，不改 Codex 本身，删掉文件即可完全卸载。
+只用 Codex 官方的 SessionStart hook 和 skill 机制，不改 Codex 本身，删掉文件即可完全卸载。
 
 ### 核心设计
 
@@ -148,23 +141,6 @@ skill 按 OpenAI 对 GPT-6 的建议编写：描述短、触发条件清楚，`S
 <summary><b>与风险相称的验证</b>：只做最能暴露问题的那一项检查</summary>
 
 做一次，通过就不再换花样重复。明确禁止：为确认复制或写入计算哈希、写完立刻读回核对、为小改动搭冒烟测试、重复或换序运行同一组测试、`git diff --check` 这类无关检查。校验和只在有官方对照值时比对一次。
-
-</details>
-
-<details>
-<summary><b>guard：执行前拦下致命操作</b></summary>
-
-规则会被模型复述，然后照样违反；上下文越长，“不要……”式的规则越容易失效。所以最致命的几条交给 `guard.py` 在执行前检查：
-
-| 类别 | 拦下 | 放行 |
-| --- | --- | --- |
-| 实验保护 | 按名字结束 python 进程（会连带杀掉所有训练）、`nvidia-smi -pl`/`-r`、递归删除 `data`、`checkpoints`、`weights`、`runs`、`wandb`、`results` 等目录、`git clean -x` | 按 PID 结束进程、`nvidia-smi` 查询、删除具体的临时子目录 |
-| 危险删除 | `Remove-Item -Recurse "$out\*"`（变量没在同一条命令里赋值时会展开成盘符根目录）、递归删除根目录或用户目录 | `rm -rf node_modules`、先赋值并检查非空再删 |
-| 凭据 | 读取或修改 `~/.codex/auth.json` | 读取 `~/.codex/config.toml` |
-| 代理客户端 | 结束 mihomo、Clash 等代理客户端，改它们的配置目录 | 系统代理、DNS、hosts、防火墙、路由、git/npm/pip 代理等配置 |
-| 中断机器 | 关机、重启、`bcdedit` | 其他系统命令 |
-
-普通命令只做一次关键词扫描就放行；脚本自身出错时也放行，不会卡住正常工作。它是一道护栏，不是完整的安全边界。
 
 </details>
 
@@ -281,7 +257,6 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 
 **编码**：没有编码规则时，模型第一次读中文 README 是乱码，只能重读；之后的所有运行从第一条命令起就带 `-Encoding UTF8` 和 `-X utf8`。
 
-**guard**：每一版都有离线样例测试（v3 170 条、v4 222 条、v5 41 条），全部符合预期。另在真实 Codex 会话里做过实机测试：普通命令正常执行，违规命令在执行前被拦下，事后没有留下任何文件，模型收到原因后也没有换写法绕过。实机测试用的是 v3 规则，当时拦下的修改系统服务和 git 代理两类，v5 起已经放行。删除类和凭据类只做离线测试，因为一旦拦截失效，测试本身就会造成损失。
 
 </details>
 
@@ -292,7 +267,7 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 | 仓库文件 | 目标位置 |
 | --- | --- |
 | `AGENTS.md` | `~/.codex/AGENTS.md`（先改写其中“用户与环境”一节） |
-| `model-agents/*` | `~/.codex/model-agents/`（三份模型规则、`session_start.py`、`guard.py`） |
+| `model-agents/*` | `~/.codex/model-agents/`（三份模型规则和 `session_start.py`） |
 | `hooks.json` | `~/.codex/hooks.json` |
 | `skills/*` | `~/.agents/skills/`（四个科研 skill，Codex 会自动发现） |
 
@@ -301,27 +276,22 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 **2. 配置 hook 命令**
 
 - macOS / Linux：保持 `command` 不变。
-- Windows：把两条 `commandWindows` 里的占位换成实际路径（可用 `where python` 查询），例如
+- Windows：把 `commandWindows` 里的占位换成实际路径（可用 `where python` 查询），例如
   `C:\Users\you\AppData\Local\Programs\Python\Python312\python.exe -I C:\Users\you\.codex\model-agents\session_start.py`
-  `C:\Users\you\AppData\Local\Programs\Python\Python312\python.exe -I -S C:\Users\you\.codex\model-agents\guard.py`
 
 **3. 信任 hook**
 
-重启 Codex，在输入框旁点击带黄点的 **Review hooks**，两条都信任（CLI 中用 `/hooks`）。Codex 要求非托管 hook 经本人审核后才会运行。
+重启 Codex，在输入框旁点击带黄点的 **Review hooks** 并信任（CLI 中用 `/hooks`）。Codex 要求非托管 hook 经本人审核后才会运行。
 
 **4. 开始使用**
 
-新建一个对话即生效。之后修改规则、skill 或 `guard.py` 都不用重新信任；修改 `hooks.json` 里的命令则需要。
+新建一个对话即生效。之后修改规则或 skill 都不用重新信任；修改 `hooks.json` 里的命令则需要。
 
 ## 常见问题
 
 **对话中途切换模型会怎样？** 规则在对话开始时注入，中途切换不会跟着换；需要时新开对话。
 
 **会不会占用很多上下文？** 每份模型规则约 800 到 1800 字，四个 skill 平时只占四行描述，用到时才读全文。
-
-**guard 会拖慢命令吗？** 每条命令多一次 Python 启动，Windows 上通常是零点几秒；普通命令只做关键词扫描就放行。
-
-**guard 拦错了怎么办？** 模型会收到拦截原因并把命令交给你。改 `guard.py` 里对应的规则即可；想保护自己的代理客户端，改 `PROXY_CLIENTS`；不想要拦截层，删掉 `hooks.json` 里的 `PreToolUse` 一段。
 
 **为什么不调高推理档位？** 社区和评测数据都不支持“提高档位会更主动”。上面的结果大多是在 `low` 档位下测出来的。
 
@@ -331,6 +301,7 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 
 ## 更新记录
 
+- **v5.1（2026-10-27）**：删除 `guard.py` 拦截层，`hooks.json` 只保留 SessionStart；代理客户端的保护改为写在规则里。
 - **v5（2026-10-27）**：科研去防御。作者立场、缺证据先补实验、审稿回复以提分为目标；结果不利时必须写 **换个角度** 并跑新实验；新增 `research-ideation`；网络和系统配置改为任务需要时直接改；guard 精简为实验保护、危险删除、凭据、代理客户端和关机重启。
 - **v4（2026-10-22）**：科研强化。新增 `ml-experiments`、`paper-writing`、`literature-review` 和 `fetch_bibtex.py`；结果溯源；guard 新增实验保护。
 - **v3（2026-10-20）**：新增“工作方式”和“代码质量”，治理防御性代码、编造数据凑测试、长任务迷路；新增 `guard.py`；兼容 PowerShell 7 和 5.1 并处理中文编码。
@@ -340,7 +311,7 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 ## 依据
 
 - OpenAI · Using GPT-6（GPT-6 提示词指南）；Developer Blog · Rethinking skills and prompts for GPT-6 Astra；GPT-6.1 Sol System Card
-- Codex 官方文档：Hooks（SessionStart、PreToolUse）、Skills、AGENTS.md、配置参考
+- Codex 官方文档：Hooks（SessionStart）、Skills、AGENTS.md、配置参考
 - Liao et al., [*Defensive Writing in GPT Models*](https://arxiv.org/html/2610.11355v2), arXiv:2610.11355（预印本）
 - 社区反馈：OpenAI 社区帖 [Repeated scope failures in real Codex projects](https://community.openai.com/t/repeated-scope-failures-in-real-codex-projects/1399757)；openai/codex Issues [#55161](https://github.com/openai/codex/issues/55161)（空变量清空目录）、[#54836](https://github.com/openai/codex/issues/54836)（中文编码损坏）、[#49022](https://github.com/openai/codex/issues/49022)（压缩后丢失目标）、[#54662](https://github.com/openai/codex/issues/54662)（规则被忽略）；V2EX、Hacker News 相关讨论
 
