@@ -13,7 +13,7 @@
 ![A/B](https://img.shields.io/badge/A%2FB%20tested-8%20tasks-0a7bbb)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-[30 秒看懂](#30-秒看懂) · [一个真实对比](#一个真实对比) · [怎么做到的](#怎么做到的) · [实测](#实测) · [快速开始](#快速开始)
+[30 秒看懂](#30-秒看懂) · [一个真实对比](#一个真实对比) · [v6 新增](#v6-新增) · [怎么做到的](#怎么做到的) · [实测](#实测) · [快速开始](#快速开始)
 
 </div>
 
@@ -49,12 +49,29 @@
 
 敢动手，也不说谎：缺证据就去补，结果不利就换一个角度继续找贡献。
 
+## v6 新增
+
+v6 专门处理 GPT 做科研时最让人头疼的三件事：改稿时满篇“我们不声称”“这并不意味着”，自己把创新说成“简单组合”，实验一不顺就缩小主张。依据是 Liao 等人的触发条件实验和 OpenAI 11 月 4 日的对齐报告（见[为什么需要它](#为什么需要它)）。规则已经更新，实测结果待补。
+
+| 以前 | v6 |
+| --- | --- |
+| 改稿时冒出“我们并不声称该方法适用于所有任务” | 没人这么说过，整句删掉 |
+| “在所评估的设定下，方法优于基线” | 写出具体的数据集和设定，或删掉 |
+| “本文方法是现有模块的简单组合” | 写出新在哪里：改了哪个假设，引入了什么机制，和最接近的工作差在哪 |
+| 让它“改得经得起审稿”，正文被逐句改弱 | 正文保持作者的论断强度；疑问连同依据和补实验方案写进给作者的汇报 |
+| 实验没赢，直接收窄主张 | 按实现、配置、评测协议、机制、问题设定逐层排查，修完重跑再判断；收窄前写明依据，交给作者决定 |
+| 构思课题从“想个创新点”开始 | 先找常见做法的默认假设，用前置实验检验；要求新的对象或机制，组合堆叠不算；按九个维度评估创新 |
+| 实验想到什么做什么 | 先列论断—证据表，配齐前置实证、对比、消融、机制分析，并设对照排除“增益只来自更多参数或调参” |
+
+另外整理了一份故事线与写作规范（写作顺序、贡献分层、实验段落、术语、翻译、公式和图），来自个人的科研和论文写作经验，写整篇论文时按需加载。
+
 ## 为什么需要它
 
 GPT-6 家族能力很强，但在真实的科研和开发里，社区反复吐槽这些问题：
 
 - **说什么做什么**：只改你点名的函数，调用方仍走旧逻辑，却汇报“验证通过”；读到明显的 bug 也一声不吭。
-- **科研写作太防御**：一篇 2026 年的预印本测到，GPT-6-Astra 改写论文结果段时每 100 词凭空加 **1.30** 个限定语，原作者只有 0.04，Claude Opus 5.5 是 0.08；最强的触发语正是“回应审稿人可能的质疑”。（[Liao et al., arXiv:2610.11355](https://arxiv.org/html/2610.11355v2)，样本较小，未经同行评审）
+- **科研写作太防御**：一篇 2026 年的预印本测到，GPT-6-Astra 改写论文结果段时每 100 词凭空加 **1.30** 个限定语，原作者只有 0.04，Claude Opus 5.5 是 0.08；最强的触发语正是“回应审稿人可能的质疑”。只让它润色时几乎不加，只要让它“检查论断”就会加，连“每条论断写到证据允许的最强程度”也会触发约一半。（[Liao et al., arXiv:2610.11355](https://arxiv.org/html/2610.11355v2)，样本较小，未经同行评审）
+- **一遇到问题就缩小主张**：实验不顺时不排查原因，直接把论断改弱、把创新说成“简单组合”。OpenAI 自己也报告，Astra 在部分研究任务上会加不必要的前提、放弃能跑通的方案、报告并不存在的障碍，完成度少约四成（[OpenAI Alignment, 2026-11-04](https://alignment.openai.com/misalignment-reports/covert-underperformance-on-safety-research-tasks/)）；6.1-Sol 则常被反馈把问题缩窄成更容易完成的版本，或做一半就停（[#54001](https://github.com/openai/codex/issues/54001)、[#59269](https://github.com/openai/codex/issues/59269)）。
 - **结论经不起推敲**：发现了数据泄漏，仍把被抬高的数字写进论文；没查过的文献也说“已核对”。
 - **过度验证**：一个小改动配上冒烟测试、SHA256 比对，额度被仪式性检查吃掉。
 - **防御性代码**：坏数据被 `try/except` 静默吞掉，程序“跑通了”，结果却悄悄少了几行。
@@ -100,20 +117,24 @@ flowchart LR
 </details>
 
 <details>
-<summary><b>科研：站在作者一边，缺证据先补实验</b></summary>
+<summary><b>科研：站在作者一边，写和核分开，缺证据先补实验</b></summary>
 
-- **作者立场**：用户自己的研究，目标是在事实范围内把贡献讲到最强。论断放句首，范围用正面表述，局限只写在 Limitations 一节；写作 skill 里不出现“审稿人会质疑什么”。
-- **缺证据先补实验**：先设计能定结论的最小实验，能低成本跑的直接跑，只有做不了或结果不支持时才收窄说法。提出“证据不足”时必须说清缺哪项具体结果。
+- **作者立场**：用户自己的研究，目标是在事实范围内把贡献讲到最强。论断放句首，后面跟数字和设定；局限写成具体条件，只写一次。
+- **写和核分开**：写作、改写、润色、翻译时用作者的语气，保留原稿的论断强度；对论断的疑问单独写进给作者的汇报（哪句话、依据哪个结果、建议补什么实验），作者确认后再改正文。改完只自查事实、数字和术语，不按“别人会怎么挑刺”再改一轮。这条直接来自 Liao 等人的触发条件实验：防御性改写出现在“检查论断”的请求里，润色时几乎没有。
+- **防御句处理表**：把“我们不声称”“这并不意味着”“在所评估的设定下”“初步表明”“仅是简单组合”等七类句子，分别对应到删除、写成具体条件、改成补实验或写出新在哪里。社区经验是“不要做 X”很难被遵守，给一个能做的替代动作才有效。
+- **缺证据先补实验，遇到问题先定位层次**：结果不如预期时按实现、配置、评测协议、机制本身、问题设定的顺序排查，修完、重跑完再下结论。一次失败通常只否定当前配置；收窄主张前写明哪个结果否定了哪一层，交给作者决定。研究任务里没做的部分必须明说，不悄悄缩小范围。
 - **结果不利时换个角度**：实验推翻原论断时，除了如实撤回，还必须在汇报的 **换个角度** 里给出更有用的替代主张（条件主张、互补主张、发现型主张），并跑一个新实验验证。
 - **审稿回复以提分为目标**：只承认事实错误，不给“如实版、收缩版”这种选项菜单；重新评审修改稿时先列出改进了什么。
 - **真实性底线**：不编造数字和引用；泄漏或测试集调参得到的数字不进论文；BibTeX 用脚本获取。
 
 | skill | 什么时候加载 | 主要内容 |
 | --- | --- | --- |
-| `ml-experiments` | 搭建训练与评测、启动长时间训练、把结果写进论文前核查 | 按受试者、病人、视频、生成器等独立单元划分数据；验证集定阈值；长训练前小规模跑通；多种子报均值和标准差；反常结果先查泄漏和捷径特征；附检测、医学影像、数字水印三份领域参考 |
-| `paper-writing` | 写或改论文、提炼贡献和故事、补引用、rebuttal | 问题、洞见、为什么现在能做；论断先行；缺证据先补实验；换个角度；`fetch_bibtex.py` 从 Crossref、DBLP、arXiv 获取 BibTeX 并附来源 |
-| `literature-review` | 调研相关工作、找基线和数据集、核查想法是否已有人做过 | 多来源检索，每篇打开核对，按方法类别组织；新颖性逐项对比，并给出拉开差距的切入点 |
-| `research-ideation` | 头脑风暴新课题、构思“我们自己的方法” | 先排除最常见的三种做法，从 5 到 8 个机制角度发散，至少两个冷门方向；每个方向写一句话主张、关键实验、证伪条件、拿最佳论文还缺什么 |
+| `ml-experiments` | 选实验协议、搭建训练与评测、启动长时间训练、把结果写进论文前核查 | 论断—证据表；前置实证、对比、消融、机制分析四类实验；排除“增益只来自更多参数或调参”的对照；结果不如预期时的五层排查；按独立单元划分数据、验证集定阈值、多种子；附检测、医学影像、数字水印三份领域参考 |
+| `paper-writing` | 写、改、润色、翻译论文，梳理故事线和贡献，补引用，rebuttal | 写和核分开；防御句处理表；贡献分思想层、方法层、效果层、资源层；换个角度；故事线、写作顺序、实验段落、措辞、翻译、公式和图的规范；`fetch_bibtex.py` 从 Crossref、DBLP、arXiv 获取 BibTeX 并附来源 |
+| `literature-review` | 调研相关工作、找基线和数据集、核查想法是否已有人做过 | 多来源检索，每篇打开核对，按方法类别组织；新颖性按假设、机制、设定、结论逐项对比，写清去掉重叠后还剩什么 |
+| `research-ideation` | 构思课题、构造和评估创新点、为已有方法找准动机 | 从真问题出发：找出常见做法的默认假设，用前置实验检验；外行切入、内行解决；要求定义新的对象或机制，组合堆叠不算；九个维度的创新评估表（洞见、新机制、辨识度、目标领域偏好等），判弱先给补救路线 |
+
+`paper-writing` 的故事线与写作规范、`research-ideation` 的构思顺序，整理自个人的科研和论文写作经验。
 
 skill 按 OpenAI 对 GPT-6 的建议编写：描述短、触发条件清楚，`SKILL.md` 只放主干，细节放在参考文件里按需再读。
 
@@ -156,9 +177,9 @@ Codex App 用自带的 PowerShell 7，CLI 可能用 Windows PowerShell 5.1，两
 
 | 模型 | 已知倾向（来源） | 对策 |
 | --- | --- | --- |
-| **GPT-6-Astra** | 爱提问、第一版后停下；对措辞敏感；委派偏少；写作中加限定语最多（OpenAI《Using GPT-6》、Liao et al.） | 定义“完成”，列出不该停的情形，需要批准的步骤放到最后，限定范围的并行子代理 |
-| **GPT-6.1-Sol** | 谎报完成与被拦后绕行的比例更高；审计时漏掉间接依赖（GPT-6.1 Sol 系统卡） | “已完成”“已核对”只用于实际做过的事；被拦下不换路重试；追踪间接引用 |
-| **GPT-6-Sol** | 内置提示词较旧，缺少“请求即行动”（系统卡） | 补齐行动规则和精简版“多想一步” |
+| **GPT-6-Astra** | 爱提问、第一版后停下；对措辞敏感；委派偏少；写作中加限定语、撤回作者论断最多；研究任务里加不必要的前提、放弃能跑通的方案（OpenAI《Using GPT-6》、OpenAI 对齐博客、Liao et al.） | 定义“完成”，列出不该停的情形，需要批准的步骤放到最后，限定范围的并行子代理；写作用作者语气、对论断的疑问进汇报；前提和障碍要给依据；不做的部分明说 |
+| **GPT-6.1-Sol** | 谎报完成与被拦后绕行的比例更高；审计时漏掉间接依赖（GPT-6.1 Sol 系统卡）；把问题缩窄、自己的假设变成需求、做一半就停（社区反馈） | “已完成”“已核对”只用于实际做过的事；被拦下不换路重试；追踪间接引用；自己引入的简化标为“我的假设”，汇报对照原目标 |
+| **GPT-6-Sol** | 内置提示词较旧，缺少“请求即行动”（系统卡） | 补齐行动规则和精简版“多想一步”；写作用作者语气，收窄主张前先排查 |
 
 </details>
 
@@ -291,7 +312,7 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 
 **对话中途切换模型会怎样？** 规则在对话开始时注入，中途切换不会跟着换；需要时新开对话。
 
-**会不会占用很多上下文？** 每份模型规则约 800 到 1800 字，四个 skill 平时只占四行描述，用到时才读全文。
+**会不会占用很多上下文？** 每份模型规则约 1000 到 2300 字，四个 skill 平时只占四行描述，用到时才读全文；较长的规范放在各 skill 的 `references/` 里，写整篇论文或设计整套实验时才读。
 
 **为什么不调高推理档位？** 社区和评测数据都不支持“提高档位会更主动”。上面的结果大多是在 `low` 档位下测出来的。
 
@@ -301,6 +322,7 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 
 ## 更新记录
 
+- **v6（2026-11-05）**：科研再强化，尚未重新实测。论文写作改为写和核分开，新增防御句处理表和故事线写作规范；研究受阻时先按实现、配置、评测协议、机制、问题设定定位，收窄主张交由作者决定，没做的部分必须明说；`research-ideation` 改为从真问题出发，新增创新评估表；`ml-experiments` 新增实验协议（论断—证据表、前置实证、消融、机制分析）；三份模型规则各加“科研”一节；全局规则禁止否认没人提出的说法。
 - **v5.1（2026-10-27）**：删除 `guard.py` 拦截层，`hooks.json` 只保留 SessionStart；代理客户端的保护改为写在规则里。
 - **v5（2026-10-27）**：科研去防御。作者立场、缺证据先补实验、审稿回复以提分为目标；结果不利时必须写 **换个角度** 并跑新实验；新增 `research-ideation`；网络和系统配置改为任务需要时直接改；guard 精简为实验保护、危险删除、凭据、代理客户端和关机重启。
 - **v4（2026-10-22）**：科研强化。新增 `ml-experiments`、`paper-writing`、`literature-review` 和 `fetch_bibtex.py`；结果溯源；guard 新增实验保护。
@@ -313,7 +335,9 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 - OpenAI · Using GPT-6（GPT-6 提示词指南）；Developer Blog · Rethinking skills and prompts for GPT-6 Astra；GPT-6.1 Sol System Card
 - Codex 官方文档：Hooks（SessionStart）、Skills、AGENTS.md、配置参考
 - Liao et al., [*Defensive Writing in GPT Models*](https://arxiv.org/html/2610.11355v2), arXiv:2610.11355（预印本）
-- 社区反馈：OpenAI 社区帖 [Repeated scope failures in real Codex projects](https://community.openai.com/t/repeated-scope-failures-in-real-codex-projects/1399757)；openai/codex Issues [#55161](https://github.com/openai/codex/issues/55161)（空变量清空目录）、[#54836](https://github.com/openai/codex/issues/54836)（中文编码损坏）、[#49022](https://github.com/openai/codex/issues/49022)（压缩后丢失目标）、[#54662](https://github.com/openai/codex/issues/54662)（规则被忽略）；V2EX、Hacker News 相关讨论
+- OpenAI Alignment · [Covert underperformance on safety research tasks](https://alignment.openai.com/misalignment-reports/covert-underperformance-on-safety-research-tasks/)（2026-11-04）
+- 社区项目：[anti-defensive-writing](https://github.com/HarryWeasley3/anti-defensive-writing)、[anti-defensive-writing-Skill](https://github.com/Adkid-Zephyr/anti-defensive-writing-Skill)、[gpt-with-taste](https://github.com/NB-Corp/gpt-with-taste)、[CCFA-Skills](https://github.com/mikubaka88/CCFA-Skills)、[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)；Zvi Mowshowitz, [GPT-6-Astra Can Do Ambitious Things](https://thezvi.substack.com/p/gpt-6-astra-can-do-ambitious-things)
+- 社区反馈：OpenAI 社区帖 [Repeated scope failures in real Codex projects](https://community.openai.com/t/repeated-scope-failures-in-real-codex-projects/1399757)；[Repeated scope drift in long Codex tasks](https://community.openai.com/t/repeated-scope-drift-in-long-codex-tasks-agent-generated-assumptions-become-requirements/1409425)；openai/codex Issues [#55161](https://github.com/openai/codex/issues/55161)（空变量清空目录）、[#54836](https://github.com/openai/codex/issues/54836)（中文编码损坏）、[#49022](https://github.com/openai/codex/issues/49022)（压缩后丢失目标）、[#54662](https://github.com/openai/codex/issues/54662)（规则被忽略）、[#54001](https://github.com/openai/codex/issues/54001)（问题被缩窄）、[#59269](https://github.com/openai/codex/issues/59269)（长任务中途停下）；V2EX、Hacker News 相关讨论
 
 ## 许可
 
