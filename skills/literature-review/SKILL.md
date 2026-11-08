@@ -7,8 +7,13 @@ description: 检索、筛选和综述学术文献。用于调研相关工作、�
 
 ## 检索
 
-- 用多个来源：arXiv、Semantic Scholar、Google Scholar、DBLP、OpenReview 和会议官网。关键词连同同义词、上位词都试一遍，再顺着关键论文的参考文献和被引列表往下找。
+- 用本 skill 目录下的 `scripts/search_papers.py` 拿结构化的元数据和引用关系（OpenAlex 加 arXiv），再配合网页检索 Google Scholar、DBLP、OpenReview 和会议官网：
+  - `search "<关键词>" --since 2024 --sort cited|recent`：按标题和摘要检索。关键词连同同义词、上位词都试一遍。
+  - `refs <DOI 或 arXiv ID>` 和 `cites <DOI 或 arXiv ID> --since 2024`：顺着关键论文的参考文献往前找、沿被引列表往后找。找基线和最接近的工作时，从两三篇核心论文各做一次。
+  - `arxiv "<关键词>"`：按提交时间看最新预印本。OpenAlex 收录 arXiv 有几天到几周的延迟。
+  - `show <ID>`：看单篇的摘要和发表处。脚本输出的 DOI 和 arXiv ID 可以直接交给 `fetch_bibtex.py`。
 - 同时覆盖最近两三年的工作和奠基性工作。写“最新”“目前最好”时注明检索日期。
+- OpenAlex 没配 `OPENALEX_API_KEY` 时，同一出口 IP 共享一份每日免费额度，用完会返回 HTTP 429；这时改用网页检索，并在汇报里说明。
 - 网站打不开时跳过，并在汇报里说明，不为此修改任何网络配置。
 
 ## 核对

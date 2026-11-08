@@ -4,16 +4,16 @@
 
 ### 把 Codex 里的 GPT-6，从“你说什么它做什么”，变成会自己找问题、敢下结论、肯补实验的研究搭档
 
-为 **GPT-6-Sol · GPT-6.1-Sol · GPT-6-Astra** 分别定制行为规则 · 四个按需加载的科研 skill
+为 **GPT-6-Sol · GPT-6.1-Sol · GPT-6-Astra** 分别定制行为规则 · 五个按需加载的科研 skill
 
 ![Codex](https://img.shields.io/badge/OpenAI%20Codex-0.160%2B-000000?logo=openai)
 ![Models](https://img.shields.io/badge/models-GPT--6%20Sol%20%7C%206.1%20Sol%20%7C%20Astra-412991)
 ![Hook](https://img.shields.io/badge/hook-SessionStart-2ea44f)
-![Skills](https://img.shields.io/badge/skills-experiments%20%7C%20paper%20%7C%20literature%20%7C%20ideation-d97706)
+![Skills](https://img.shields.io/badge/skills-experiments%20%7C%20data%20%7C%20paper%20%7C%20literature%20%7C%20ideation-d97706)
 ![A/B](https://img.shields.io/badge/A%2FB%20tested-8%20tasks-0a7bbb)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-[30 秒看懂](#30-秒看懂) · [一个真实对比](#一个真实对比) · [v6 新增](#v6-新增) · [怎么做到的](#怎么做到的) · [实测](#实测) · [快速开始](#快速开始)
+[30 秒看懂](#30-秒看懂) · [一个真实对比](#一个真实对比) · [v7 新增](#v7-新增) · [v6 新增](#v6-新增) · [怎么做到的](#怎么做到的) · [实测](#实测) · [快速开始](#快速开始)
 
 </div>
 
@@ -48,6 +48,49 @@
 > **换个角度**：现有证据支持 centroid 的平均表现更好，也说明结果对视频划分敏感。另跑了验证集选权重的融合实验，AUC 为 0.6653，未超过 centroid，暂不支持互补性主张。
 
 敢动手，也不说谎：缺证据就去补，结果不利就换一个角度继续找贡献。
+
+## v7 新增
+
+依据 Anthropic 11 月 5 日的报告 [*AI for Scientific Discovery: How Researchers Use Claude*](https://www.anthropic.com/research/how-researchers-use-claude)（Hermle et al., 2026）。报告分析了 20.7 万个科研会话和 528 位科研人员的问卷，和我们最相关的是三个发现：
+
+- **用得最多的，不是最重要的**。数据分析占 Claude Code 科研会话的 48.1%，写作占 Claude 科研会话的 32.0%；构思和假设生成只占 4.2%（Claude Code 上 2.1%），数据采集占 11.5%。问卷里，研究者把这两项排为产出重要成果最关键的第一和第二。
+- **AI 在能核对的任务上最强**。任务的 AI 能力分和它的强化学习适配度（成功是否容易核对、能否在计算环境里大量模拟、反馈是否快）相关系数 0.78；能力分最高的 20% 任务，Claude Code 上的使用量约为研究者时间占比的 4 倍。
+- **接上工具和数据库，才做得了专业的活**。连接了科研数据库的 Claude Science 上，构思类会话占 8%，约是 Claude 的两倍；单个任务折合的人工时长约是 Claude 的两倍，超过 70% 的会话高度自主。
+
+在报告的情景测算里，计算机科学的加速潜力排在最前：现有能力普及后约 1.96 倍，75% 的非体力步骤自动化后约 8 倍。v7 按这三个发现改：
+
+| 报告的发现 | v7 的改动 |
+| --- | --- |
+| 数据采集是最重要的环节之一，AI 却用得少 | 新增 `data-gathering` skill：动手前先定论断推广到哪里、什么算独立单元、标签从哪来，再按七类来源给做法（公开基准、网页和 API、代码仓库、文本和大模型评测数据、合成数据、测量和日志、人工标注），包括测试集污染、fork 造成的代码重复、合成数据怎么评测 |
+| AI 的能力跟着“能不能核对”走 | 新增 `check_dataset.py`，把“数据集有没有问题”变成可核对的检查：单元泄漏、文件或文本重复跨划分、重复样本标签不同、时间交叠、单个属性就能预测标签的捷径；没有分类标签的数据也能查泄漏和重复。全局规则新增“按能不能核对决定放手程度”：能核对的做到核对通过，不能核对的先造核对手段 |
+| 接上数据库，构思和专业任务才多起来 | 新增 `search_papers.py`（OpenAlex 加 arXiv）：按标题摘要检索、沿参考文献和被引列表双向追溯、看最新预印本；`research-ideation` 先拉近两年的工作和现有方法的失败案例，再构思 |
+| 关键研究决策留给人 | 选哪个研究问题、收窄或放弃主张、投哪里，AI 给出依据和推荐，由作者拍板 |
+
+另外让科研 skill 覆盖计算机的各个方向，不只机器学习：`ml-experiments` 的主干改成通用写法，新增系统与性能实验、用户研究与人工评测两份参考；安全参考覆盖恶意软件、漏洞、入侵检测、欺诈检测等基于学习的安全系统，按 Arp 等人总结的十个陷阱逐项给出做法；检测参考新增可信取证（校准、针对性规避攻击、篡改定位、解释的删除测试）；`data-gathering` 附人工标注、深度伪造与 AIGC、网络流量三份参考；`research-ideation` 的“新机制”扩到算法、系统抽象、协议、交互方式和理论刻画。
+
+<details>
+<summary>体检脚本实际输出（合成清单：模拟按帧随机划分、真图全是 JPEG、真实语音静音更长）</summary>
+
+```
+== Group leakage
+[FAIL] identity: 38 values span several splits, 379 rows affected. e.g. id000 -> test, train; ...
+== Duplicate file contents (path)
+[FAIL] identical contents: 1 values span several splits, 2 rows affected. ...
+[FAIL] 1 identical files carry different labels (manifest rows 11, 12)
+== Temporal order (capture_time)
+[WARN] 104/104 rows of 'test' are not newer than the newest 'train' row; ...
+== Shortcut attributes (majority rule fitted on 'train', balanced accuracy, chance 0.50)
+[WARN] format: test 1.00   fake: png 100% | real: jpg 100%
+[OK] width: test 0.51   fake: median 651 | real: median 654
+[WARN] leading_silence: test 0.92   fake: median 0.392 | real: median 1.19
+== Summary: 4 FAIL, 4 WARN
+```
+
+同样的字段按身份、按时间正确划分后，输出 0 FAIL、0 WARN。静音时长这一项对应真实问题：ASVspoof 2019/2021 里只用开头静音时长就能达到 85% 的准确率（Müller et al., 2021）。
+
+</details>
+
+两个新脚本已在本机跑通：体检脚本用图像和代码两类合成清单（埋了单元泄漏、重复、标签冲突、时间交叠和捷径）以及一份干净清单测过，检索脚本的五个子命令都实际请求过。规则对模型行为的影响还没有做 A/B 实测。
 
 ## v6 新增
 
@@ -95,7 +138,7 @@ flowchart LR
 | --- | --- | --- |
 | **全局规则** | `AGENTS.md` | 所有模型共用：操作边界、工作方式、代码质量、与风险相称的验证、科研原则 |
 | **模型规则** | `model-agents/AGENTS.*.md` | 只针对各模型已知短板，由 SessionStart hook 按会话所选模型注入 |
-| **科研 skill** | `skills/` | 实验、论文、文献、构思四个 skill，平时只占一行描述，任务对得上时才加载全文 |
+| **科研 skill** | `skills/` | 实验、数据、论文、文献、构思五个 skill，平时只占一行描述，任务对得上时才加载全文 |
 
 只用 Codex 官方的 SessionStart hook 和 skill 机制，不改 Codex 本身，删掉文件即可完全卸载。
 
@@ -129,9 +172,10 @@ flowchart LR
 
 | skill | 什么时候加载 | 主要内容 |
 | --- | --- | --- |
-| `ml-experiments` | 选实验协议、搭建训练与评测、启动长时间训练、把结果写进论文前核查 | 论断—证据表；前置实证、对比、消融、机制分析四类实验；排除“增益只来自更多参数或调参”的对照；结果不如预期时的五层排查；按独立单元划分数据、验证集定阈值、多种子；附检测、医学影像、数字水印三份领域参考 |
+| `ml-experiments` | 选实验协议、搭建训练与评测、启动长时间运行、做系统性能测量、设计用户研究和人工评测、把结果写进论文前核查 | 论断—证据表；前置实证、对比、消融、机制分析四类实验；排除“增益只来自更多参数或调参”的对照；结果不如预期时的五层排查；按独立单元划分数据、验证集定阈值、多次重复；附系统与性能、用户研究与人工评测两份实验类型参考，以及安全检测、检测与可信取证、医学影像、数字水印四份领域参考 |
+| `data-gathering` | 获取公开数据集和基准、爬取网页和 API、挖掘代码仓库、生成合成数据、采集日志和 trace、组织人工标注、写数据集说明、使用前体检数据 | 先定推广范围、独立单元和标签来源；按七类来源给做法；`check_dataset.py` 检查单元泄漏、文件和文本重复、时间交叠和单属性捷径；附人工标注、深度伪造与 AIGC、网络流量三份参考；按 Datasheets for Datasets 写数据说明 |
 | `paper-writing` | 写、改、润色、翻译论文，梳理故事线和贡献，补引用，rebuttal | 写和核分开；防御句处理表；贡献分思想层、方法层、效果层、资源层；换个角度；故事线、写作顺序、实验段落、措辞、翻译、公式和图的规范；`fetch_bibtex.py` 从 Crossref、DBLP、arXiv 获取 BibTeX 并附来源 |
-| `literature-review` | 调研相关工作、找基线和数据集、核查想法是否已有人做过 | 多来源检索，每篇打开核对，按方法类别组织；新颖性按假设、机制、设定、结论逐项对比，写清去掉重叠后还剩什么 |
+| `literature-review` | 调研相关工作、找基线和数据集、核查想法是否已有人做过 | `search_papers.py` 按标题摘要检索、沿参考文献和被引列表追溯、看最新 arXiv；多来源检索，每篇打开核对，按方法类别组织；新颖性按假设、机制、设定、结论逐项对比，写清去掉重叠后还剩什么 |
 | `research-ideation` | 构思课题、构造和评估创新点、为已有方法找准动机 | 从真问题出发：找出常见做法的默认假设，用前置实验检验；外行切入、内行解决；要求定义新的对象或机制，组合堆叠不算；九个维度的创新评估表（洞见、新机制、辨识度、目标领域偏好等），判弱先给补救路线 |
 
 `paper-writing` 的故事线与写作规范、`research-ideation` 的构思顺序，整理自个人的科研和论文写作经验。
@@ -290,7 +334,7 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 | `AGENTS.md` | `~/.codex/AGENTS.md`（先改写其中“用户与环境”一节） |
 | `model-agents/*` | `~/.codex/model-agents/`（三份模型规则和 `session_start.py`） |
 | `hooks.json` | `~/.codex/hooks.json` |
-| `skills/*` | `~/.agents/skills/`（四个科研 skill，Codex 会自动发现） |
+| `skills/*` | `~/.agents/skills/`（五个科研 skill，Codex 会自动发现） |
 
 已有同名文件时先备份，再合并而不是覆盖。Windows 下 `~` 即 `C:\Users\<你的用户名>`。
 
@@ -312,7 +356,7 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 
 **对话中途切换模型会怎样？** 规则在对话开始时注入，中途切换不会跟着换；需要时新开对话。
 
-**会不会占用很多上下文？** 每份模型规则约 1000 到 2300 字，四个 skill 平时只占四行描述，用到时才读全文；较长的规范放在各 skill 的 `references/` 里，写整篇论文或设计整套实验时才读。
+**会不会占用很多上下文？** 每份模型规则约 1000 到 2300 字，五个 skill 平时只占五行描述，用到时才读全文；较长的规范放在各 skill 的 `references/` 里，写整篇论文或设计整套实验时才读。
 
 **为什么不调高推理档位？** 社区和评测数据都不支持“提高档位会更主动”。上面的结果大多是在 `low` 档位下测出来的。
 
@@ -322,6 +366,7 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 
 ## 更新记录
 
+- **v7（2026-11-07）**：依据 Anthropic 的科研使用报告。新增 `data-gathering` skill（按七类数据来源）和 `check_dataset.py`（单元泄漏、文件和文本重复、时间交叠、单属性捷径），附人工标注、深度伪造与 AIGC、网络流量三份参考；新增 `search_papers.py`（OpenAlex 加 arXiv，检索和双向引用追溯），接入 `literature-review` 和 `research-ideation`；`ml-experiments` 主干改为通用写法，新增系统与性能、用户研究与人工评测、安全检测三份参考，检测参考补可信取证；`research-ideation` 的新机制扩到算法、系统和交互；全局规则新增“按能不能核对决定放手程度”；Astra 规则把攻击流量生成和反取证列为正常研究内容。规则部分尚未重新实测。
 - **v6（2026-11-05）**：科研再强化，尚未重新实测。论文写作改为写和核分开，新增防御句处理表和故事线写作规范；研究受阻时先按实现、配置、评测协议、机制、问题设定定位，收窄主张交由作者决定，没做的部分必须明说；`research-ideation` 改为从真问题出发，新增创新评估表；`ml-experiments` 新增实验协议（论断—证据表、前置实证、消融、机制分析）；三份模型规则各加“科研”一节；全局规则禁止否认没人提出的说法。
 - **v5.1（2026-10-27）**：删除 `guard.py` 拦截层，`hooks.json` 只保留 SessionStart；代理客户端的保护改为写在规则里。
 - **v5（2026-10-27）**：科研去防御。作者立场、缺证据先补实验、审稿回复以提分为目标；结果不利时必须写 **换个角度** 并跑新实验；新增 `research-ideation`；网络和系统配置改为任务需要时直接改；guard 精简为实验保护、危险删除、凭据、代理客户端和关机重启。
@@ -332,6 +377,9 @@ v5 改完后，任务 1 到 5 全部重跑过，没有退化。
 
 ## 依据
 
+- Hermle et al., [*AI for Scientific Discovery: How Researchers Use Claude*](https://www.anthropic.com/research/how-researchers-use-claude), Anthropic Institute 技术报告, 2026-11-05（v7 的出发点）
+- Arp et al., *Dos and Don'ts of Machine Learning in Computer Security*, USENIX Security 2022, [arXiv:2010.09470](https://arxiv.org/abs/2010.09470)；Engelen et al., *Troubleshooting an Intrusion Detection Dataset: the CICIDS2017 Case Study*, IEEE SPW 2021, [doi:10.1109/SPW53761.2021.00009](https://doi.org/10.1109/SPW53761.2021.00009)；Müller et al., *Speech is Silver, Silence is Golden*, ASVspoof 2021, [doi:10.21437/ASVspoof.2021-9](https://doi.org/10.21437/ASVspoof.2021-9)；Carlini and Farid, *Evading Deepfake-Image Detectors with White- and Black-Box Attacks*, CVPRW 2020, [doi:10.1109/CVPRW50498.2020.00337](https://doi.org/10.1109/CVPRW50498.2020.00337)；Gebru et al., *Datasheets for Datasets*, [arXiv:1803.09010](https://arxiv.org/abs/1803.09010)
+- Allamanis, *The Adverse Effects of Code Duplication in Machine Learning Models of Code*, Onward! 2019, [doi:10.1145/3359591.3359735](https://doi.org/10.1145/3359591.3359735)；Lee et al., *Deduplicating Training Data Makes Language Models Better*, ACL 2022, [doi:10.18653/v1/2022.acl-long.577](https://doi.org/10.18653/v1/2022.acl-long.577)；Mytkowicz et al., *Producing Wrong Data Without Doing Anything Obviously Wrong!*, ASPLOS 2009, [doi:10.1145/1508284.1508275](https://doi.org/10.1145/1508284.1508275)；Pendlebury et al., *TESSERACT*, USENIX Security 2019, [arXiv:1807.07838](https://arxiv.org/abs/1807.07838)；Shah et al., *When Is It Better to Compare than to Score?*, [arXiv:1406.6618](https://arxiv.org/abs/1406.6618)
 - OpenAI · Using GPT-6（GPT-6 提示词指南）；Developer Blog · Rethinking skills and prompts for GPT-6 Astra；GPT-6.1 Sol System Card
 - Codex 官方文档：Hooks（SessionStart）、Skills、AGENTS.md、配置参考
 - Liao et al., [*Defensive Writing in GPT Models*](https://arxiv.org/html/2610.11355v2), arXiv:2610.11355（预印本）
