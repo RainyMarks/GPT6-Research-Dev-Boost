@@ -3,7 +3,7 @@
 Usage:
   python -X utf8 check_dataset.py manifest.csv [--split split] [--label label]
       [--group user --group repo] [--path path --root DIR] [--text content]
-      [--time created_at] [--attr source --attr length] [--order train,val,test]
+      [--near question] [--time created_at] [--attr source --attr length] [--order train,val,test]
 
 The manifest is a CSV with one row per sample: an image, document, code file, query, user session,
 flow, trace ... Checks:
@@ -12,19 +12,25 @@ flow, trace ... Checks:
     prompt template, source item, host, collection batch ...) that appears in more than one split;
   * exact duplicates across splits or with conflicting labels: identical file contents (--path) or
     identical text after lowercasing and collapsing whitespace (--text);
+  * near duplicates across splits (--near): paraphrased text, lightly edited code. Rows are compared by
+    IDF-weighted overlap of their word tokens, so shared rare tokens (names, identifiers, numbers) count
+    and shared boilerplate does not; example pairs are printed for a manual check of the threshold;
   * temporal overlap (--time): evaluation rows that are not newer than the newest training row;
   * shortcuts (--attr, needs --label): how well one attribute (source, format, length, resolution,
     collection batch, annotator ...) predicts the label. A majority-vote rule is fitted on the first
     split of --order and scored with balanced accuracy on the other splits.
-Near duplicates (paraphrases, renamed code, re-encoded media) need a dedicated tool (MinHash, clone
-detection, perceptual hashing); write its cluster IDs into a column and pass that column as --group.
-Leakage, duplicates and broken rows are FAIL (exit code 1); temporal overlap and shortcuts are WARN.
+Media near duplicates (re-encoded images, audio, video) need perceptual hashing; write its cluster IDs
+into a column and pass that column as --group.
+Leakage, exact duplicates and broken rows are FAIL (exit code 1); near duplicates, temporal overlap and
+shortcuts are WARN.
 """
 import argparse
 import bisect
 import csv
 import hashlib
+import math
 import os
+import re
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -125,6 +131,46 @@ def check_duplicates(rows, keys, label_col, split_col, name):
     within = sum(len(g) - 1 for g in groups.values() if len(g) > 1 and len({rows[i][split_col] for i in g}) == 1)
     if within:
         report("WARN", f"{name}: {within} extra copies inside a single split")
+
+
+def check_near(rows, col, split_col, label_col, threshold, max_df):
+    toks = [set(re.findall(r"\w+", r[col].lower())) for r in rows]
+    df = Counter(t for ts in toks for t in ts)
+    idf = {t: math.log(len(rows) / c) for t, c in df.items()}
+    limit = max_df or max(2, len(rows) // 100)
+    index = defaultdict(list)
+    for i, ts in enumerate(toks):
+        for t in ts:
+            if df[t] <= limit:
+                index[t].append(i)
+    scores = {}
+    for ids in index.values():
+        for a, i in enumerate(ids):
+            for j in ids[a + 1:]:
+                if rows[i][split_col] == rows[j][split_col] or (i, j) in scores:
+                    continue
+                union = sum(idf[t] for t in toks[i] | toks[j])
+                scores[(i, j)] = sum(idf[t] for t in toks[i] & toks[j]) / union if union else 0.0
+    best = defaultdict(float)
+    for (i, j), v in scores.items():
+        for k in (i, j):
+            best[k] = max(best[k], v)
+    ladder = ", ".join(f">={t:.1f}: {sum(v >= t for v in best.values())}" for t in (0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9))
+    print(f"  rows with a cross-split match at each threshold ({ladder}); a gap in these counts marks a usable threshold")
+    hits = sorted(((v, k) for k, v in scores.items() if v >= threshold), reverse=True)
+    if not hits:
+        report("OK", f"no cross-split pair scores >= {threshold} ({len(scores)} candidate pairs compared)")
+        return
+    involved = {i for _, pair in hits for i in pair}
+    report("WARN", f"{len(hits)} cross-split pairs score >= {threshold}, {len(involved)} rows involved; "
+                   "check the examples below by hand before trusting the threshold")
+    for score, (i, j) in hits[:3] + hits[-2:] if len(hits) > 5 else hits:
+        print(f"    {score:.2f}  row {i + 2} ({rows[i][split_col]}): {rows[i][col][:70]!r}")
+        print(f"          row {j + 2} ({rows[j][split_col]}): {rows[j][col][:70]!r}")
+    if label_col:
+        conflicting = sum(1 for _, (i, j) in hits if rows[i][label_col] != rows[j][label_col])
+        if conflicting:
+            report("WARN", f"{conflicting} of these pairs carry different labels")
 
 
 def parse_time(value):
@@ -239,6 +285,9 @@ def main():
     parser.add_argument("--path", help="column with file paths; identical file contents are compared")
     parser.add_argument("--root", help="directory that relative paths start from (default: the manifest's folder)")
     parser.add_argument("--text", action="append", default=[], help="text column compared after normalization")
+    parser.add_argument("--near", action="append", default=[], help="text column searched for near duplicates")
+    parser.add_argument("--near-threshold", type=float, default=0.5)
+    parser.add_argument("--near-max-df", type=int, help="ignore tokens in more rows than this (default 1%% of rows)")
     parser.add_argument("--time", help="column with creation or capture time (ISO 8601 or a number)")
     parser.add_argument("--attr", action="append", default=[], help="attribute to test as a label shortcut")
     parser.add_argument("--order", help="comma-separated split order, training split first")
@@ -251,7 +300,7 @@ def main():
         reader = csv.DictReader(f)
         rows = list(reader)
         columns = reader.fieldnames or []
-    wanted = [args.split, *args.group, *args.text, *args.attr] + [c for c in (args.label, args.path, args.time) if c]
+    wanted = [args.split, *args.group, *args.text, *args.near, *args.attr] + [c for c in (args.label, args.path, args.time) if c]
     unknown = [c for c in wanted if c not in columns]
     if unknown:
         sys.exit(f"columns not in {args.manifest}: {', '.join(unknown)}. Available: {', '.join(columns)}")
@@ -276,6 +325,9 @@ def main():
     for col in args.text:
         print(f"\n== Duplicate text ({col}, case and whitespace ignored)")
         check_duplicates(rows, text_keys(rows, col), args.label, args.split, f"identical {col}")
+    for col in args.near:
+        print(f"\n== Near duplicates across splits ({col}, IDF-weighted token overlap)")
+        check_near(rows, col, args.split, args.label, args.near_threshold, args.near_max_df)
     if args.time:
         check_time(rows, args.split, args.time, order)
     if args.attr:
