@@ -18,6 +18,8 @@ RULES = {
     "gpt-6-sol": "AGENTS.gpt-6-sol.md",
     "gpt-6.1-sol": "AGENTS.gpt-6.1-sol.md",
     "gpt-6-astra": "AGENTS.gpt-6-astra.md",
+    "gpt-6.2-sol": "AGENTS.gpt-6.2-sol.md",
+    "gpt-6.2-astra": "AGENTS.gpt-6.2-astra.md",
 }
 COMPACT_HEAD = "【上下文刚被自动压缩，下面是重新加载的模型补充规则。它不是用户的新消息，不需要回复或确认。】"
 COMPACT_TAIL = ("【规则到此结束。不要回复“已收到”或复述规则。以压缩摘要和最近一条用户消息为准，"
